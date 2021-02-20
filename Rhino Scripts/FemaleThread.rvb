@@ -1,4 +1,6 @@
 Option Explicit
+'Script written by Sean Leitch
+'Script version Friday, 19 February 2021 19:17:28
 
 Private dblThreadDia
 If IsEmpty(dblThreadDia) Then
