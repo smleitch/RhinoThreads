@@ -1,0 +1,205 @@
+Option Explicit
+
+Private dblThreadDia
+If IsEmpty(dblThreadDia) Then
+	dblThreadDia = 5
+End If
+Private dblThreadPitch
+If IsEmpty(dblThreadPitch) Then
+	dblThreadPitch = 1
+End If
+Private blnThreadStartChamfer
+If IsEmpty(blnThreadStartChamfer) Then
+	blnThreadStartChamfer = True
+End If
+Private blnThreadEndChamfer
+If IsEmpty(blnThreadEndChamfer) Then
+	blnThreadEndChamfer = True
+End If
+Private dblFitAllowance
+If IsEmpty(dblFitAllowance) Then
+	dblFitAllowance = 0
+End If
+Private blnThreadDir
+If IsEmpty(blnThreadDir) Then
+	blnThreadDir = True
+End If
+Call FemaleThread()
+Sub FemaleThread()
+	' Get Parameters
+	Dim arrLine
+	arrLine = Rhino.GetLine()
+	If Rhino.Distance(arrLine(0), arrLine(1)) = 0 Or Not IsArray(arrLine) Then
+		Exit Sub
+	End If	
+	Dim arrOpt0, arrOpt1, arrOpt2, arrOpt3, arrOpt4, arrOpt5, arrOptions, arrParams, arrDefaults
+	arrDefaults = Array(dblThreadDia, dblThreadPitch, blnThreadStartChamfer, blnThreadEndChamfer, dblFitAllowance, blnThreadDir)
+	arrOpt0 = Array(3, "Dia", arrDefaults(0), "Thread Diameter", 0)
+	arrOpt1 = Array(3, "Pitch", arrDefaults(1), "Thread Pitch", 0)
+	arrOpt2 = Array(1, "StartChamfer", "Off", "On", arrDefaults(2))
+	arrOpt3 = Array(1, "EndChamfer", "Off", "On", arrDefaults(3))
+	arrOpt4 = Array(3, "FitAllowance", arrDefaults(4), "Fit Allowance", 0, dblThreadPitch / 4)
+	arrOpt5 = Array(1, "Direction", "Left", "Right", arrDefaults(5))
+	arrOptions = Array(arrOpt0, arrOpt1, arrOpt2, arrOpt3, arrOpt4, arrOpt5)
+	arrParams = Rhino.GetOption("Set parameters. Press Enter to accept", arrOptions)
+	If arrParams(0) <> arrDefaults(0) Or arrParams(1) <> arrDefaults(1) Or arrParams(2) <> arrDefaults(2) Or arrParams(3) <> arrDefaults(3) Or arrParams(4) <> arrDefaults(4) Or arrParams(5) <> arrDefaults(5) Then
+		Do While arrParams(0) <> arrDefaults(0) Or arrParams(1) <> arrDefaults(1) Or arrParams(2) <> arrDefaults(2) Or arrParams(3) <> arrDefaults(3) Or arrParams(4) <> arrDefaults(4) Or arrParams(5) <> arrDefaults(5)
+			arrDefaults = arrParams
+			arrOptions(0)(2) = arrDefaults(0)
+			arrOptions(1)(2) = arrDefaults(1)
+			arrOptions(2)(4) = arrDefaults(2)
+			arrOptions(3)(4) = arrDefaults(3)
+			arrOptions(4)(2) = arrDefaults(4)
+			arrOptions(5)(4) = arrDefaults(5)
+			arrParams = Rhino.GetOption("Set parameters. Press Enter to accept", arrOptions)
+		Loop
+	End If
+	dblThreadDia = arrParams(0)
+	dblThreadPitch = arrParams(1)
+	blnThreadStartChamfer = arrParams(2)
+	blnThreadEndChamfer = arrParams(3)
+	dblFitAllowance = arrParams(4)
+	blnThreadDir = arrParams(5)
+	
+	Dim intThreadDir
+	If blnThreadDir = False Then
+		intThreadDir = -1
+	Else intThreadDir = 1
+	End If
+	
+	Dim dblTubeThickness
+	dblTubeThickness = Rhino.GetReal("Tube Thickness", dblThreadPitch, ((3 * dblThreadPitch * sqr(3)) / 8))
+	Dim dblInnerRadius, dblOuterRadius
+	dblInnerRadius = (dblThreadDia / 2) - ((5 * dblThreadPitch * sqr(3)) / 16)
+	dblOuterRadius = dblInnerRadius + dblTubeThickness
+	
+	Dim dblStartChamferSize, dblEndChamferSize
+	If blnThreadStartChamfer = True Then
+		dblStartChamferSize = Rhino.GetReal("Chamfer Size at Start", dblTubeThickness / 2, 0, dblTubeThickness)
+	Else dblStartChamferSize = dblTubeThickness / 2
+	End If
+	If dblStartChamferSize = 0 Then
+		blnThreadStartChamfer = False
+		dblStartChamferSize = dblTubeThickness / 2
+	End If
+	If blnThreadEndChamfer = True Then
+		dblEndChamferSize = Rhino.GetReal("Chamfer Size at End", dblTubeThickness / 2, 0, dblTubeThickness)
+	Else dblEndChamferSize = dblTubeThickness / 2
+	End If
+	If dblEndChamferSize = 0 Then
+		blnThreadEndChamfer = False
+		dblEndChamferSize = dblTubeThickness / 2
+	End If
+	Rhino.EnableRedraw(0)
+	
+	' Define Start and End points on vertical axis	
+	Dim arrVertStart,arrVertEnd
+	arrVertStart = Array(0, 0, 0)
+	arrVertEnd = Array(0, 0, Rhino.Distance(arrLine(0), arrLine(1)))
+	Dim strLine
+	strLine = Rhino.AddLine(arrVertStart, arrVertEnd)
+	
+	'Draw Base Tube
+	Dim arrBaseTube, arrLineDomain
+	arrLineDomain = Rhino.CurveDomain(strLine)
+	arrBaseTube = Rhino.AddThickPipe(strLine, Array(arrLineDomain(0)), Array(dblInnerRadius), Array(dblOuterRadius),, 1)
+	Dim strBaseTube
+	strBaseTube = arrBaseTube(0)
+	
+	'Chamfer Base Tube
+	arrBaseTube = Rhino.ExplodePolysurfaces(strBaseTube, 1)
+	Dim strOuterShaft, strShaft, strStart, strEnd
+	strOuterShaft = arrBaseTube(0)
+	strShaft = arrBaseTube(1)
+	strStart = arrBaseTube(2)
+	strEnd = arrBaseTube(3)
+	
+	Dim arrStartDomain,arrEndDomain
+	arrStartDomain = Rhino.SurfaceDomain(strStart, 0)
+	arrEndDomain = Rhino.SurfaceDomain(strEnd, 0)
+	Dim arrChamfTube
+		
+	'Chamf first two surfaces
+	Dim arrTubeChamfStart, arrTubeChamfEnd
+	arrTubeChamfStart = Rhino.FilletSurfacesEx(strShaft, Array(1, 1), dblStartChamferSize, strStart, Array(arrStartDomain(1), 1), dblStartChamferSize, 1, 1, 1)
+	arrTubeChamfEnd = Rhino.FilletSurfacesEx(strShaft, Array(1, 1), dblEndChamferSize, strEnd, Array(arrEndDomain(1), 1), dblEndChamferSize, 1, 1, 1)
+
+	Dim strStartChamf,strShaftTrimStart,strStartTrim
+	strStartChamf = arrTubeChamfStart(0)(0)
+	strShaftTrimStart = arrTubeChamfStart(1)(0)
+	strStartTrim = arrTubeChamfStart(2)(0)
+	
+	Dim strEndChamf, strShaftTrimEnd, strEndTrim
+	strEndChamf = arrTubeChamfEnd(0)(0)
+	strShaftTrimEnd = arrTubeChamfEnd(1)(0)
+	strEndTrim = arrTubeChamfEnd(2)(0)
+	
+	Dim arrTubeChamfBoth
+	arrTubeChamfBoth = Rhino.FilletSurfacesEx(strShaftTrimStart, Array(1, 1), dblEndChamferSize, strEnd, Array(arrEndDomain(1), 1), dblEndChamferSize, 1, 1, 1)
+
+	Dim strShaftTrimBoth
+	strShaftTrimBoth = arrTubeChamfBoth(1)(0)
+		
+	If blnThreadStartChamfer = True Then
+		If blnThreadEndChamfer = False Then
+			arrChamfTube = Rhino.JoinSurfacesEx(Array(strStartTrim, strStartChamf, strShaftTrimStart, strEnd, strOuterShaft), 1)
+			Rhino.DeleteObjects(Array(strEndChamf, strShaftTrimEnd, strEndTrim, strShaftTrimBoth, strStart, strShaft))
+		Else arrChamfTube = Rhino.JoinSurfacesEx(Array(strStartTrim, strStartChamf, strShaftTrimBoth, strEndChamf, strEndTrim, strOuterShaft), 1)
+			Rhino.DeleteObjects(Array(strShaftTrimStart, strShaftTrimEnd, strShaft, strStart, strEnd))
+		End If
+	Else arrChamfTube = Rhino.JoinSurfacesEx(Array(strStart, strShaftTrimEnd, strEndChamf, strEndTrim, strOuterShaft), 1)
+		Rhino.DeleteObjects(Array(strStartChamf, strShaftTrimStart, strStartTrim, strShaftTrimBoth, strShaft, strEnd))
+	End If
+	Rhino.DeleteObjects(Array(arrTubeChamfBoth(0)(0), arrTubeChamfBoth(2)(0)))
+	strBaseTube = arrChamfTube(0)
+	arrBaseTube = Rhino.ExplodePolysurfaces(strBaseTube, 1)
+	strBaseTube = Rhino.JoinSurfacesEx(arrBaseTube, 1)(0)
+	
+	'Draw Cut Profile	
+	Dim arrCutInnerPoint, arrCutTopPoint, arrCutBottomPoint, strCutProfileTop, strCutProfileBottom, strCutProfileSide
+
+	Dim arrCutOuterPoint, arrCutShape
+	arrCutTopPoint = Array((dblThreadDia / 2) - (7 * dblThreadPitch) / (16 / sqr(3)), 0, 0)
+	arrCutBottomPoint = Rhino.VectorAdd(arrCutTopPoint, Array(0, 0, -dblThreadPitch))
+	arrCutOuterPoint = Rhino.VectorAdd(arrCutBottomPoint, Array((dblThreadPitch * sqr(3)) / 2, 0, dblThreadPitch / 2))
+	strCutProfileTop = Rhino.AddLine(arrCutOuterPoint, arrCutTopPoint)
+	strCutProfileBottom = Rhino.AddLine(arrCutOuterPoint, arrCutBottomPoint)
+	strCutProfileSide = Rhino.AddLine(arrCutTopPoint, arrCutBottomPoint)
+	arrCutShape = Rhino.FilletCurves(strCutProfileTop, arrCutOuterPoint, strCutProfileBottom, arrCutOuterPoint, dblThreadPitch / 16, True, True)
+	
+	Rhino.DeleteObjects(Array(strCutProfileTop, strCutProfileBottom))
+	Dim arrCutProfile
+	arrCutProfile = Rhino.JoinCurves(Array(arrCutShape(0), strCutProfileSide), True)
+	Dim strCutProfile
+	If dblFitAllowance > 0 Then
+		strCutProfile = Rhino.OffsetCurve(arrCutProfile(0), Array(dblThreadDia + dblThreadPitch, 0, 0), dblFitAllowance, Array(0, 1, 0))(0)
+		Rhino.DeleteObject(arrCutProfile(0))
+	Else strCutProfile = arrCutProfile(0)
+	End If
+	
+	
+	'Draw Helix Curve
+	Dim strLineExt
+	strLineExt = Rhino.ExtendCurveLength(strLine, 0, 2, dblThreadPitch)	
+	Dim strHelixCurve
+	strHelixCurve = Rhino.AddSpiral2(strLineExt, Rhino.CurveDomain(strLineExt), dblThreadPitch * intThreadDir, 0, dblThreadDia / 2)
+	
+	' Extrude Thread Cut profile along Helix
+	Dim arrCutSweep
+	arrCutSweep = Rhino.AddSweep1(strHelixCurve, Array(strCutProfile),,,, 1)
+	
+	Dim strCutSweep
+	strCutSweep = arrCutSweep(0)
+	Rhino.CapPlanarHoles(strCutSweep)
+	
+	' Cut Threads
+	Dim arrThreadedRod
+	arrThreadedRod = Rhino.BooleanDifference(Array(strBaseTube), Array(strCutSweep), 1, 1)
+	
+	' Orient to original line
+	Call Rhino.OrientObjects(arrThreadedRod, Array(arrVertStart, arrVertEnd), arrLine)
+	
+	Rhino.DeleteObjects(Array(strLine, strLineExt, strHelixCurve, strCutProfile))
+	
+	Rhino.EnableRedraw(1)
+End Sub
