@@ -1,7 +1,7 @@
 Option Explicit
-'Script written by <insert name>
-'Script copyrighted by <insert company name>
-'Script version Friday, 12 February 2021 14:07:53
+'Script written by Sean Leitch
+'Script version Friday, 19 February 2021 19:17:28
+
 Private dblThreadDia
 If IsEmpty(dblThreadDia) Then
 	dblThreadDia = 5
